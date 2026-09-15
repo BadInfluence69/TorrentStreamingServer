@@ -1,12 +1,16 @@
 # TorrentStreamingServer
 
-"""
 The Hub - Torrent Streaming Server
 -----------------------------------
 Streams the largest media file inside a torrent straight into an HTML5
 <video> element via an on-the-fly FFmpeg remux. There is intentionally no
 "download" affordance anywhere in the UI or the API - only the STREAM path
 is exposed to the browser.
+
+# apibay.org (The Pirate Bay's API) has gone permanently dead - it now
+# returns a fake "No results returned" stub for literally every query.
+# torrents-csv.com is a live, actively-scraped, no-key JSON search index
+# that covers the same swarm (TPB/1337x/etc mirrors) and is used instead.
 
 Notable improvements over the original version:
   - DHT / LSD / UPnP / NAT-PMP enabled on the libtorrent session (with
@@ -26,4 +30,3 @@ Notable improvements over the original version:
     libtorrent session no longer gets started twice by the reloader).
   - The "download"/magnet button has been removed entirely - the grid only
     offers STREAM, and no raw magnet link is rendered into the page.
-"""
