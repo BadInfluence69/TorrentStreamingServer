@@ -60,6 +60,7 @@ for router, port in [
     ('router.bittorrent.com', 6881),
     ('router.utorrent.com', 6881),
     ('dht.transmissionbt.com', 6881),
+     ('apibay.org/precompiled/data_top100_recent.json', 6881),
 ]:
     try:
         lt_session.add_dht_router(router, port)
@@ -336,16 +337,19 @@ def format_bytes(size_bytes):
     except (TypeError, ValueError):
         return "Unknown"
 
-
+# apibay.org (The Pirate Bay's API) has gone permanently dead - it now
+# returns a fake "No results returned" stub for literally every query.
+# torrents-csv.com is a live, actively-scraped, no-key JSON search index
+# that covers the same swarm (TPB/1337x/etc mirrors) and is used instead.
 def get_torrent_results(query):
     """Returns (results, error_message). error_message is None on success."""
-    url = f"https://apibay.org/q.php?q={urllib.parse.quote(query)}"
+    url = f"https://torrents-csv.com/service/search?q={urllib.parse.quote(query)}&size=25"
     headers = {'User-Agent': 'Mozilla/5.0'}
 
     try:
         response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
-        items = response.json()
+        payload = response.json()
     except requests.RequestException as e:
         logger.warning(f"Search provider unreachable: {e}")
         return [], "Search provider is unreachable right now. Please try again shortly."
@@ -353,13 +357,14 @@ def get_torrent_results(query):
         logger.warning(f"Search provider returned bad data: {e}")
         return [], "Search provider returned an unexpected response."
 
-    if not isinstance(items, list) or not items or items[0].get('id') == '0':
+    items = payload.get('torrents') if isinstance(payload, dict) else None
+    if not items:
         return [], None
 
     candidates = []
-    for item in items[:15]:  # Limit top matches for instant metadata fetch
+    for item in items:
         name = item.get('name', 'Unknown')
-        info_hash = item.get('info_hash', '')
+        info_hash = item.get('infohash', '')
         try:
             seeders = int(item.get('seeders', 0) or 0)
         except (TypeError, ValueError):
@@ -368,13 +373,18 @@ def get_torrent_results(query):
         if info_hash and seeders >= 5:
             candidates.append((item, name, info_hash, seeders))
 
+    # Keep only the strongest swarms - enough seeders to actually stream,
+    # capped so the TMDB metadata fan-out below stays fast.
+    candidates.sort(key=lambda c: c[3], reverse=True)
+    candidates = candidates[:10]
+
     def build_result(candidate):
         item, name, info_hash, seeders = candidate
         magnet_link = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote(name)}"
         meta = fetch_tmdb_metadata(name)
         return {
             'name': name,
-            'size': format_bytes(item.get('size', 0)),
+            'size': format_bytes(item.get('size_bytes', 0)),
             'seeders': seeders,
             'hash': info_hash,
             'magnet_encoded': urllib.parse.quote(magnet_link),
